@@ -86,6 +86,36 @@ mask is likely **necessary but not sufficient**: a 68020/030 also pushes
 **different exception stack frames** than the 68000 the SE ROM expects. That is
 the probable next failure — flag it, don't assume success.
 
+## Troubleshooting: `GLIBCXX_3.4.29 not found` / `GLIBC_2.38 not found`
+
+The prebuilt cross-compiled binary is linked against a **newer** toolchain
+(Debian 13) than some Raspberry Pi OS releases provide, so it fails with:
+
+```
+/lib/arm-linux-gnueabihf/libstdc++.so.6: version `GLIBCXX_3.4.29' not found
+/lib/arm-linux-gnueabihf/libc.so.6: version `GLIBC_2.38' not found
+```
+
+Two fixes, either works:
+
+**1. Use the statically-linked build.** Static linking removes all shared
+library version dependencies — it runs on any armhf Pi OS with a compatible
+kernel. Grab `emulator_mac_armhf_static` from the [Releases](../../releases)
+page.
+
+**2. Build natively on the Pi** (most robust — always matches your distro):
+
+```bash
+cd pistorm-macintosh
+git apply /path/to/patches/24bit_patch.diff
+cp /path/to/build/*.c /path/to/build/build_mac_native.sh .
+bash build_mac_native.sh          # -> emulator_mac_native (static by default)
+sudo ./emulator_mac_native
+```
+
+`build_mac_native.sh` uses the system `gcc`/`g++` and needs no cross-toolchain,
+no raylib, no ALSA and no `/opt/vc` headers. Set `STATIC=0` for a dynamic build.
+
 ## Building a Mac-focused emulator
 
 `build/build_mac_armhf.sh` cross-compiles the emulator for **32-bit armhf**
