@@ -1,0 +1,20 @@
+# build artifacts
+*.o
+*.bin
+*.elf
+emulator
+emulator_mac_*
+build_armhf/
+
+# ROMs -- never commit (Apple's copyrighted ROM image)
+*.rom
+*.ROM
+
+# disk images
+*.dsk
+*.img
+
+# misc
+*.log
+*.d
+.DS_Store

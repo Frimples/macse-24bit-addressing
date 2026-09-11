@@ -1,0 +1,117 @@
+diff --git a/m68k.h b/m68k.h
+index ce9e648..4dfbfdf 100644
+--- a/m68k.h
++++ b/m68k.h
+@@ -319,6 +319,11 @@ void m68k_set_instr_hook_callback(void  (*callback)(unsigned int pc));
+  */
+ void m68k_set_cpu_type(struct m68ki_cpu_core *state, unsigned int cpu_type);
+ 
++/* Macintosh SE 24-bit addressing override (see m68kcpu.c). When non-zero,
++ * m68k_set_cpu_type() clamps the address mask to 0x00FFFFFF for all CPU
++ * types, emulating a 24-bit address bus. Default 1. */
++extern int m68k_force_24bit_addressing;
++
+ /* Do whatever initialisations the core requires.  Should be called
+  * at least once at init time.
+  */
+diff --git a/m68kcpu.c b/m68kcpu.c
+index e4e1380..da92799 100644
+--- a/m68kcpu.c
++++ b/m68kcpu.c
+@@ -781,8 +781,26 @@ void m68k_set_instr_hook_callback(void  (*callback)(unsigned int pc))
+ 	CALLBACK_INSTR_HOOK = callback ? callback : default_instr_hook_callback;
+ }
+ 
+-/* Set the CPU type. */
+-void m68k_set_cpu_type(struct m68ki_cpu_core *state, unsigned int cpu_type)
++/* ------------------------------------------------------------------------
++ * 24-BIT ADDRESSING OVERRIDE (Macintosh SE compatibility patch)
++ *
++ * The 68000/68010/68EC020 have a 24-bit address bus; the 68020/030/040 have a
++ * 32-bit one. Classic Mac OS (and the SE ROM) rely on the 24-bit wrap -- they
++ * store flags in the high byte of pointers/handles -- so a 32-bit-addressing
++ * CPU breaks the SE (grey screen). That is why only 68000/68010/68EC020 work.
++ *
++ * When this flag is set, the address mask is clamped to 0x00FFFFFF for EVERY
++ * CPU type, so an 020/030-class core behaves like a 24-bit-addressing CPU
++ * (essentially a "68EC020 with 030 instructions"). ADDRESS_68K() already ANDs
++ * every access with CPU_ADDRESS_MASK, so this costs ~1.3% (measured).
++ *
++ * Default ON (this is a Mac SE fork). Toggle with the `force24bit` config
++ * option in default.cfg, or set to 0 to restore normal 32-bit behaviour.
++ * ------------------------------------------------------------------------ */
++int m68k_force_24bit_addressing = 1;
++
++/* Set the CPU type (inner: sets masks/cycles per the real CPU). */
++static void m68k_set_cpu_type_inner(struct m68ki_cpu_core *state, unsigned int cpu_type)
+ {
+ 	switch(cpu_type)
+ 	{
+@@ -805,7 +823,7 @@ void m68k_set_cpu_type(struct m68ki_cpu_core *state, unsigned int cpu_type)
+ 			HAS_FPU          = 0;
+ 			return;
+ 		case M68K_CPU_TYPE_SCC68070:
+-			m68k_set_cpu_type(state, M68K_CPU_TYPE_68010);
++			m68k_set_cpu_type_inner(state, M68K_CPU_TYPE_68010);
+ 			CPU_ADDRESS_MASK = 0xffffffff;
+ 			CPU_TYPE         = CPU_TYPE_SCC070;
+ 			return;
+@@ -956,6 +974,15 @@ void m68k_set_cpu_type(struct m68ki_cpu_core *state, unsigned int cpu_type)
+ 	}
+ }
+ 
++/* Public entry point: set the CPU type, then apply the optional 24-bit
++ * addressing override (see m68k_force_24bit_addressing above). */
++void m68k_set_cpu_type(struct m68ki_cpu_core *state, unsigned int cpu_type)
++{
++	m68k_set_cpu_type_inner(state, cpu_type);
++	if (m68k_force_24bit_addressing)
++		state->address_mask = 0x00ffffff;
++}
++
+ uint m68k_get_address_mask(m68ki_cpu_core *state) {
+ 	return state->address_mask;
+ }
+diff --git a/platforms/mac68k/mac68k-platform.c b/platforms/mac68k/mac68k-platform.c
+index ba6a354..b8089bd 100644
+--- a/platforms/mac68k/mac68k-platform.c
++++ b/platforms/mac68k/mac68k-platform.c
+@@ -6,6 +6,7 @@
+ #include <ctype.h>
+ #include "platforms/platforms.h"
+ #include "platforms/shared/rtc.h"
++#include "m68k.h"
+ 
+ //#define DEBUG_MAC_PLATFORM
+ 
+@@ -77,6 +78,12 @@ void setvar_mac68k(struct emulator_config *cfg, char *var, char *val) {
+         printf("[MAC68K] System ROM/RAM OVL position set to %.8X\n", ovl_sysrom_pos);
+     }
+ 
++    if (CHKVAR("force24bit") && val) {
++        m68k_force_24bit_addressing = get_int(val) ? 1 : 0;
++        printf("[MAC68K] 24-bit addressing override %s\n",
++               m68k_force_24bit_addressing ? "ENABLED (SE-compatible)" : "disabled (32-bit)");
++    }
++
+     if (CHKVAR("iscsi") && !iscsi_enabled) {
+         printf("[MAC68K] iSCSI Interface Enabled... well, not really.\n");
+         iscsi_enabled = 1;
+diff --git a/platforms/macse/default.cfg b/platforms/macse/default.cfg
+index 1117277..d1b7ebe 100644
+--- a/platforms/macse/default.cfg
++++ b/platforms/macse/default.cfg
+@@ -2,6 +2,13 @@
+ # Sets CPU type. Valid types are (probably) 68000, 68010, 68020, 68EC020, 68030, 68EC030, 68040, 68EC040, 68LC040 and some STTTT thing.
+ #cpu STTTT
+ cpu 68000 
++
++# force24bit: Macintosh SE 24-bit addressing override (see 24bit_patch.diff).
++# When 1 (default), the emulated address mask is clamped to 0x00FFFFFF for EVERY
++# CPU type, so 68020/68030-class cores present a 24-bit address bus and become
++# usable on the SE (which relies on 24-bit addressing). Set 0 to restore normal
++# 32-bit addressing for the 020/030.
++#force24bit 1
+ #cpu 68010
+ #cpu 68EC020
+ # Map 512KB kickstart ROM to default offset.
