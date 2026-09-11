@@ -79,12 +79,29 @@ it operate on a 24-bit constant instead of a no-op `& 0xFFFFFFFF`.
 3. **Runs** — the static armhf binary starts on a 32-bit-compat kernel (stops
    at `/dev/mem`, i.e. it needs root + real GPIO, as expected).
 
-## Not verified
+## Verified on hardware ✅
 
-**No boot test on real Mac SE / PiStorm hardware.** Forcing a 24-bit address
-mask is likely **necessary but not sufficient**: a 68020/030 also pushes
-**different exception stack frames** than the 68000 the SE ROM expects. That is
-the probable next failure — flag it, don't assume success.
+**Confirmed working on a real Macintosh SE + PiStorm** (reported by the
+maintainer of the fork, September 2026):
+
+| CPU mode | Result |
+|---|---|
+| `68000` | ✅ as before (the patch is a no-op for 24-bit CPUs) |
+| `68030` | ✅ **boots to the desktop and runs applications — no new glitches** |
+
+Before this patch, `68020` / `68030` / `68EC030` produced a **grey screen and
+never reached the cursor**. That is precisely what the 24-bit mask fixes.
+
+### Correction to an earlier claim
+
+This project originally warned the 24-bit mask would be *"necessary but not
+sufficient"*, predicting that the 68020/030 **exception-stack-frame** difference
+would be the next blocker. **That prediction did not hold** — the SE ROM
+tolerates the 020/030 frames on the boot path, and the 68030 boots fully.
+
+**Not yet exercised:** long-run stability, and the wider exception/PMMU surface
+(the 68030 has the PMMU; the 68EC030 does not).
+
 
 ## Troubleshooting: `GLIBCXX_3.4.29 not found` / `GLIBC_2.38 not found`
 
